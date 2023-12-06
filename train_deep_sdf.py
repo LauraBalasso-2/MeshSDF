@@ -59,10 +59,11 @@ def main_function(experiment_directory, resolution):
     code_reg_lambda = get_spec_with_default(specs, "CodeRegularizationLambda", 1e-4)
 
     code_bound = get_spec_with_default(specs, "CodeBound", None)
-    decoder = DeepSDF(latent_size, **specs["NetworkSpecs"]).cuda()
+    decoder = DeepSDF(latent_size, **specs["NetworkSpecs"]).cpu()
 
-    print("training with {} GPU(s)".format(torch.cuda.device_count()))
+    print("training with {} CPU(s)".format(torch.cpu.device_count()))
     decoder = torch.nn.DataParallel(decoder)
+    # decoder.double()
 
     num_epochs = specs["NumEpochs"]
     log_frequency = get_spec_with_default(specs, "LogFrequency", 1)
@@ -96,7 +97,7 @@ def main_function(experiment_directory, resolution):
     print("There are {} scenes".format(num_scenes))
     print(decoder)
 
-    lat_vecs = torch.nn.Embedding(num_scenes, latent_size).cuda()
+    lat_vecs = torch.nn.Embedding(num_scenes, latent_size).cpu()
     torch.nn.init.normal_(
         lat_vecs.weight.data,
         0.0,
@@ -154,14 +155,14 @@ def main_function(experiment_directory, resolution):
                 sdf_gt = torch.clamp(sdf_gt, minT, maxT)
 
             indices = indices.unsqueeze(-1).repeat(1, num_samp_per_scene).view(-1)
-            batch_vecs = lat_vecs(indices.cuda())
+            batch_vecs = lat_vecs(indices.cpu())
 
-            pred_sdf = decoder(batch_vecs, xyz.cuda())
+            pred_sdf = decoder(batch_vecs, xyz.cpu())
 
             if enforce_minmax:
                 pred_sdf = torch.clamp(pred_sdf, minT, maxT)
 
-            batch_loss = loss_l1(pred_sdf, sdf_gt.cuda()) / num_sdf_samples
+            batch_loss = loss_l1(pred_sdf, sdf_gt.cpu()) / num_sdf_samples
 
             if do_code_regularization:
                 l2_size_loss = torch.sum(torch.norm(batch_vecs, dim=1))
@@ -169,7 +170,7 @@ def main_function(experiment_directory, resolution):
                     code_reg_lambda * min(1, epoch / 100) * l2_size_loss
                 ) / num_sdf_samples
 
-                batch_loss = batch_loss + reg_loss.cuda()
+                batch_loss = batch_loss + reg_loss.cpu()
 
             batch_loss.backward()
 
@@ -194,7 +195,7 @@ def main_function(experiment_directory, resolution):
     decoder.eval()
     reconstruction_dir = get_reconstruction_dir(experiment_directory, True)
     for sdf_data, indices, name in sdf_loader_reconstruction:
-        latent = lat_vecs(indices.cuda()).squeeze(0)
+        latent = lat_vecs(indices.cpu()).squeeze(0)
         mesh_filename = get_mesh_filename(reconstruction_dir, name[0])
         print("Reconstructing {}...".format(mesh_filename))
         with torch.no_grad():

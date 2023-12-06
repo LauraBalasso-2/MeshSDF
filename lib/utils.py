@@ -53,16 +53,16 @@ class Renderer(torch.nn.Module):
 
         # Pixel coordinates
         self.X, self.Y = torch.meshgrid(torch.arange(0, image_size), torch.arange(0, image_size))
-        self.X = (2*(0.5 + self.X.unsqueeze(0).unsqueeze(-1))/image_size - 1).float().cuda()
-        self.Y = (2*(0.5 + self.Y.unsqueeze(0).unsqueeze(-1))/image_size - 1).float().cuda()
+        self.X = (2*(0.5 + self.X.unsqueeze(0).unsqueeze(-1))/image_size - 1).float().cpu()
+        self.Y = (2*(0.5 + self.Y.unsqueeze(0).unsqueeze(-1))/image_size - 1).float().cpu()
 
     def depth_2_normal(self, depth, depth_unvalid, cameras):
 
         B, H, W, C = depth.shape
 
-        grad_out = torch.zeros(B, H, W, 3).cuda()
+        grad_out = torch.zeros(B, H, W, 3).cpu()
         # Pixel coordinates
-        xy_depth = torch.cat([self.X, self.Y, depth], 3).cuda().reshape(B,-1, 3)
+        xy_depth = torch.cat([self.X, self.Y, depth], 3).cpu().reshape(B,-1, 3)
         xyz_unproj = cameras.unproject_points(xy_depth, world_coordinates=False)
 
         # compute tangent vectors

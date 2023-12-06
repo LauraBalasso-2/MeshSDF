@@ -32,12 +32,12 @@ def convert_sdf_samples_to_ply(
 
     numpy_3d_sdf_tensor = pytorch_3d_sdf_tensor.numpy()
 
-    verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(
+    verts, faces, normals, values = skimage.measure.marching_cubes(
         numpy_3d_sdf_tensor, level=0.0, spacing=[voxel_size] * 3
     )
 
     # transform from voxel coordinates to camera coordinates
-    # note x and y are flipped in the output of marching_cubes
+    # note x and y are flipped in the output of marching_cubesls
     mesh_points = np.zeros_like(verts)
     mesh_points[:, 0] = voxel_grid_origin[0] + verts[:, 0]
     mesh_points[:, 1] = voxel_grid_origin[1] + verts[:, 1]
@@ -96,7 +96,7 @@ def convert_sdf_samples_to_mesh(
 
     numpy_3d_sdf_tensor = pytorch_3d_sdf_tensor.numpy()
 
-    verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(
+    verts, faces, normals, values = skimage.measure.marching_cubes(
         numpy_3d_sdf_tensor, level=0.0, spacing=[voxel_size] * 3
     )
 
@@ -151,7 +151,7 @@ def create_mesh(
     head = 0
 
     while head < num_samples:
-        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
+        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cpu()
         samples[head : min(head + max_batch, num_samples), 3] = (
             decode_sdf(decoder, latent_vec, sample_subset)
             .squeeze(1)
@@ -220,7 +220,7 @@ def create_mesh_optim_fast(
 
         head = 0
         while head < num_samples:
-            sample_subset = samples[indices[head : min(head + max_batch, num_samples)], 0:3].reshape(-1, 3).cuda()
+            sample_subset = samples[indices[head : min(head + max_batch, num_samples)], 0:3].reshape(-1, 3).cpu()
             samples[indices[head : min(head + max_batch, num_samples)], 3] = (
                 decode_sdf(decoder, latent_vec, sample_subset)
                 .squeeze(1)

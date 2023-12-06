@@ -83,7 +83,7 @@ class DeepSDF(nn.Module):
 
         if self.positional_encoding:
             xyz = fourier_transform(xyz, self.fourier_degree)
-        input = torch.cat([latent, xyz.cuda()], dim=1)
+        input = torch.cat([latent, xyz.cpu()], dim=1)
 
         if input.shape[1] > 3 and self.latent_dropout:
             latent_vecs = input[:, :-3]
