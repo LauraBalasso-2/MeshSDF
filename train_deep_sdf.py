@@ -13,13 +13,10 @@ import pdb
 import lib
 from lib.workspace import *
 from lib.models.decoder import *
-from lib.utils import *
 from lib.mesh import *
 
 
-
 def main_function(experiment_directory, resolution):
-
     specs = load_experiment_specifications(experiment_directory)
 
     print("Experiment description: \n" + ' '.join([str(elem) for elem in specs["Description"]]))
@@ -167,8 +164,8 @@ def main_function(experiment_directory, resolution):
             if do_code_regularization:
                 l2_size_loss = torch.sum(torch.norm(batch_vecs, dim=1))
                 reg_loss = (
-                    code_reg_lambda * min(1, epoch / 100) * l2_size_loss
-                ) / num_sdf_samples
+                                   code_reg_lambda * min(1, epoch / 100) * l2_size_loss
+                           ) / num_sdf_samples
 
                 batch_loss = batch_loss + reg_loss.cpu()
 
@@ -199,12 +196,12 @@ def main_function(experiment_directory, resolution):
         mesh_filename = get_mesh_filename(reconstruction_dir, name[0])
         print("Reconstructing {}...".format(mesh_filename))
         with torch.no_grad():
-            create_mesh(decoder, latent, N=resolution, output_mesh = False, filename = mesh_filename)
+            create_mesh(decoder, latent, N=resolution, output_mesh=False, filename=mesh_filename)
 
     print("Done!")
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     import argparse
 
     arg_parser = argparse.ArgumentParser(description="Train MeshSDF.")
@@ -214,8 +211,8 @@ if __name__ == "__main__":
         dest="experiment_directory",
         required=True,
         help="The experiment directory. This directory should include "
-        + "experiment specifications in 'specs.json', and logging will be "
-        + "done in this directory as well.",
+             + "experiment specifications in 'specs.json', and logging will be "
+             + "done in this directory as well.",
     )
     arg_parser.add_argument(
         "--resolution",
