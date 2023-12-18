@@ -85,7 +85,8 @@ def load_model_parameters(experiment_directory, checkpoint, encoder, decoder):
 
 
 
-def build_decoder(experiment_directory, experiment_specs):
+def build_decoder(experiment_directory):
+    experiment_specs = load_experiment_specifications(experiment_directory)
 
     arch = __import__(
         "networks." + experiment_specs["NetworkArch"], fromlist=["Decoder"]
@@ -99,10 +100,10 @@ def build_decoder(experiment_directory, experiment_specs):
 
 
 def load_decoder(
-    experiment_directory, experiment_specs, checkpoint, data_parallel=True
+    experiment_directory, checkpoint, data_parallel=True
 ):
 
-    decoder = build_decoder(experiment_directory, experiment_specs)
+    decoder = build_decoder(experiment_directory)
 
     if data_parallel:
         decoder = torch.nn.DataParallel(decoder)
