@@ -371,7 +371,7 @@ def remove_nans(tensor):
     return tensor[~tensor_nan, :]
 
 
-def unpack_sdf_samples(filename, subsample=None):
+def unpack_sdf_samples(filename, subsample=None, random_seed=None):
 
     npz = np.load(filename)
     if subsample is None:
@@ -382,6 +382,9 @@ def unpack_sdf_samples(filename, subsample=None):
 
     # split the sample into half
     half = int(subsample / 2)
+
+    if random_seed is not None:
+        torch.manual_seed(random_seed)
 
     random_pos = (torch.rand(half).cpu() * pos_tensor.shape[0]).long()
     random_neg = (torch.rand(half).cpu() * neg_tensor.shape[0]).long()

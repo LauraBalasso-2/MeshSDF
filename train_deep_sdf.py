@@ -46,6 +46,7 @@ def main_function(experiment_directory, resolution):
     signal.signal(signal.SIGINT, signal_handler)
 
     num_samp_per_scene = specs["SamplesPerScene"]
+    subsample_random_seed = specs["RandomSubsampleSeed"]
     scene_per_batch = specs["ScenesPerBatch"]
     clamp_dist = specs["ClampingDistance"]
     minT = -clamp_dist
@@ -68,7 +69,7 @@ def main_function(experiment_directory, resolution):
     with open(train_split_file, "r") as f:
         train_split = json.load(f)
 
-    sdf_dataset = lib.data.SDFSamples(data_source, train_split, num_samp_per_scene)
+    sdf_dataset = lib.data.SDFSamples(data_source, train_split, num_samp_per_scene, random_seed=subsample_random_seed)
 
     num_data_loader_threads = get_spec_with_default(specs, "DataLoaderThreads", 1)
     print("loading data with {} threads".format(num_data_loader_threads))

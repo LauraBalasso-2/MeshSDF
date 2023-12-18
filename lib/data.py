@@ -21,11 +21,13 @@ class SDFSamples(torch.utils.data.Dataset):
         self,
         data_source,
         split,
-        subsample
+        subsample,
+        random_seed=None
     ):
         self.subsample = subsample
         self.data_source = data_source
         self.npyfiles = get_instance_filenames(data_source, split)
+        self.random_seed = random_seed
 
 
     def __len__(self):
@@ -35,7 +37,7 @@ class SDFSamples(torch.utils.data.Dataset):
         filename = os.path.join(
             self.data_source, self.npyfiles[idx]
         )
-        return unpack_sdf_samples(filename, self.subsample), idx, self.npyfiles[idx]
+        return unpack_sdf_samples(filename, self.subsample, self.random_seed), idx, self.npyfiles[idx]
 
 
 class RGBA2SDF(torch.utils.data.Dataset):
