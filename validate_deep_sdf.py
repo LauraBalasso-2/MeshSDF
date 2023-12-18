@@ -25,6 +25,8 @@ reconstructed_meshes = glob.glob(os.path.join(args.experiment_directory, "Recons
 print(reconstructed_meshes)
 
 save_dir = os.path.join(args.experiment_directory, "model_validation", "reconstructions_sdf")
+if not os.path.isdir(save_dir):
+    os.system('mkdir -p ' + save_dir)
 
 for reconstruction in reconstructed_meshes:
     print(reconstruction)
