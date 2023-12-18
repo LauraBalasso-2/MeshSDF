@@ -21,22 +21,22 @@ def compute_normal_consistency(gt_normal, pred_normal):
 
     """
     gt_normal_np = gt_normal.float().detach().cpu().numpy()[0]
-    gt_mask_np = (gt_normal[...,0]>0).float().detach().cpu().numpy()[0]
+    gt_mask_np = (gt_normal[..., 0] > 0).float().detach().cpu().numpy()[0]
 
     pred_normal_np = pred_normal.float().detach().cpu().numpy()[0]
-    pred_mask_np = (pred_normal[...,0]>0).float().detach().cpu().numpy()[0]
+    pred_mask_np = (pred_normal[..., 0] > 0).float().detach().cpu().numpy()[0]
 
     # take valid intersection
     inner_mask = (gt_mask_np * pred_mask_np).astype(bool)
 
-    gt_vecs = 2*gt_normal_np[inner_mask]-1
-    pred_vecs = 2*pred_normal_np[inner_mask]-1
-    metric = np.mean(np.sum(gt_vecs*pred_vecs, 1))
+    gt_vecs = 2 * gt_normal_np[inner_mask] - 1
+    pred_vecs = 2 * pred_normal_np[inner_mask] - 1
+    metric = np.mean(np.sum(gt_vecs * pred_vecs, 1))
 
     return metric
 
 class Renderer(torch.nn.Module):
-    def __init__(self, silhouette_renderer, depth_renderer, max_depth = 5, image_size=256):
+    def __init__(self, silhouette_renderer, depth_renderer, max_depth=5, image_size=256):
         super().__init__()
         self.silhouette_renderer = silhouette_renderer
         self.depth_renderer = depth_renderer
@@ -53,8 +53,8 @@ class Renderer(torch.nn.Module):
 
         # Pixel coordinates
         self.X, self.Y = torch.meshgrid(torch.arange(0, image_size), torch.arange(0, image_size))
-        self.X = (2*(0.5 + self.X.unsqueeze(0).unsqueeze(-1))/image_size - 1).float().cpu()
-        self.Y = (2*(0.5 + self.Y.unsqueeze(0).unsqueeze(-1))/image_size - 1).float().cpu()
+        self.X = (2 * (0.5 + self.X.unsqueeze(0).unsqueeze(-1)) / image_size - 1).float().cpu()
+        self.Y = (2 * (0.5 + self.Y.unsqueeze(0).unsqueeze(-1)) / image_size - 1).float().cpu()
 
     def depth_2_normal(self, depth, depth_unvalid, cameras):
 
@@ -62,22 +62,22 @@ class Renderer(torch.nn.Module):
 
         grad_out = torch.zeros(B, H, W, 3).cpu()
         # Pixel coordinates
-        xy_depth = torch.cat([self.X, self.Y, depth], 3).cpu().reshape(B,-1, 3)
+        xy_depth = torch.cat([self.X, self.Y, depth], 3).cpu().reshape(B, -1, 3)
         xyz_unproj = cameras.unproject_points(xy_depth, world_coordinates=False)
 
         # compute tangent vectors
         XYZ_camera = xyz_unproj.reshape(B, H, W, 3)
-        vx = XYZ_camera[:,1:-1,2:,:]-XYZ_camera[:,1:-1,1:-1,:]
-        vy = XYZ_camera[:,2:,1:-1,:]-XYZ_camera[:,1:-1,1:-1,:]
+        vx = XYZ_camera[:, 1:-1, 2:, :] - XYZ_camera[:, 1:-1, 1:-1, :]
+        vy = XYZ_camera[:, 2:, 1:-1, :] - XYZ_camera[:, 1:-1, 1:-1, :]
 
         # finally compute cross product
-        normal = torch.cross(vx.reshape(-1, 3),vy.reshape(-1, 3))
+        normal = torch.cross(vx.reshape(-1, 3), vy.reshape(-1, 3))
         normal_norm = normal.norm(p=2, dim=1, keepdim=True)
 
         normal_normalized = normal.div(normal_norm)
         # reshape to image
-        normal_out = normal_normalized.reshape(B, H-2, W-2, 3)
-        grad_out[:,1:-1,1:-1,:] = (0.5 - 0.5*normal_out)
+        normal_out = normal_normalized.reshape(B, H - 2, W - 2, 3)
+        grad_out[:, 1:-1, 1:-1, :] = (0.5 - 0.5 * normal_out)
 
         # zero out +Inf
         grad_out[depth_unvalid] = 0.0
@@ -91,8 +91,8 @@ class Renderer(torch.nn.Module):
 
         # now get depth out
         depth_ref = self.depth_renderer(meshes_world=meshes_world, **kwargs)
-        depth_ref = depth_ref.zbuf[...,0].unsqueeze(-1)
-        depth_unvalid = depth_ref<0
+        depth_ref = depth_ref.zbuf[..., 0].unsqueeze(-1)
+        depth_unvalid = depth_ref < 0
         depth_ref[depth_unvalid] = self.max_depth
         depth_out = depth_ref[..., 0]
 
@@ -102,9 +102,9 @@ class Renderer(torch.nn.Module):
         return normals_out, silhouette_out
 
 def process_image(images_out, alpha_out):
-    image_out_export = 255*images_out.detach().cpu().numpy()[0].transpose((1, 2, 0))  # [image_size, image_size, RGB]
-    alpha_out_export = 255*alpha_out.detach().cpu().numpy()[0]
-    image_out_export = np.concatenate( (image_out_export, alpha_out_export[:,:,np.newaxis]), -1 )
+    image_out_export = 255 * images_out.detach().cpu().numpy()[0].transpose((1, 2, 0))  # [image_size, image_size, RGB]
+    alpha_out_export = 255 * alpha_out.detach().cpu().numpy()[0]
+    image_out_export = np.concatenate((image_out_export, alpha_out_export[:, :, np.newaxis]), -1)
     return image_out_export.astype(np.uint8)
 
 def store_image(image_filename, images_out, alpha_out):
@@ -112,13 +112,13 @@ def store_image(image_filename, images_out, alpha_out):
     imageio.imwrite(image_filename, image_out_export)
 
 def interpolate_on_faces(field, faces):
-    #TODO: no batch support for now
+    # TODO: no batch support for now
     nv = field.shape[0]
     nf = faces.shape[0]
     field = field.reshape((nv, 1))
     # pytorch only supports long and byte tensors for indexing
     face_coordinates = field[faces.long()].squeeze(0)
-    centroids = 1.0/3 * torch.sum(face_coordinates, 1)
+    centroids = 1.0 / 3 * torch.sum(face_coordinates, 1)
     return centroids
 
 class LearningRateSchedule:
@@ -233,7 +233,6 @@ def load_optimizer(experiment_directory, filename, optimizer):
 
 
 def save_latent_vectors(experiment_directory, filename, latent_vec, epoch):
-
     latent_codes_dir = ws.get_latent_codes_dir(experiment_directory, True)
 
     all_latents = latent_vec.state_dict()
@@ -245,7 +244,6 @@ def save_latent_vectors(experiment_directory, filename, latent_vec, epoch):
 
 
 def load_latent_vectors(experiment_directory, filename, lat_vecs):
-
     full_filename = os.path.join(
         ws.get_latent_codes_dir(experiment_directory), filename
     )
@@ -278,9 +276,9 @@ def load_latent_vectors(experiment_directory, filename, lat_vecs):
 
 
 def save_logs(
-    experiment_directory,
-    loss_log,
-    epoch,
+        experiment_directory,
+        loss_log,
+        epoch,
 ):
 
     torch.save(
@@ -336,9 +334,9 @@ def append_parameter_magnitudes(param_mag_log, model):
 
 
 def fourier_transform(x, L=5):
-    cosines = torch.cat([torch.cos(2**l*3.1415*x) for l in range(L)], -1)
-    sines = torch.cat([torch.sin(2**l*3.1415*x) for l in range(L)], -1)
-    transformed_x = torch.cat((cosines,sines),-1)
+    cosines = torch.cat([torch.cos(2 ** l * 3.1415 * x) for l in range(L)], -1)
+    sines = torch.cat([torch.sin(2 ** l * 3.1415 * x) for l in range(L)], -1)
+    transformed_x = torch.cat((cosines, sines), -1)
     return transformed_x
 
 
@@ -357,7 +355,7 @@ def get_instance_filenames(data_source, split):
                     dataset, class_name, instance_name + ".npz"
                 )
                 if not os.path.isfile(
-                    os.path.join(data_source, instance_filename)
+                        os.path.join(data_source, instance_filename)
                 ):
                     logging.warning(
                         "Requested non-existent file '{}'".format(instance_filename)
@@ -440,7 +438,7 @@ rot90y = np.array([[0, 0, -1],
                    [0, 1, 0],
                    [1, 0, 0]], dtype=np.float32)
 
-def getBlenderProj(az, el, distance_ratio, roll = 0, focal_length=35, img_w=137, img_h=137):
+def getBlenderProj(az, el, distance_ratio, roll=0, focal_length=35, img_w=137, img_h=137):
     """Calculate 4x3 3D to 2D projection matrix given viewpoint parameters."""
     F_MM = focal_length  # Focal length
     SENSOR_SIZE_MM = 32.
@@ -449,8 +447,8 @@ def getBlenderProj(az, el, distance_ratio, roll = 0, focal_length=35, img_w=137,
     SKEW = 0.
     CAM_MAX_DIST = 1.75
     CAM_ROT = np.asarray([[1.910685676922942e-15, 4.371138828673793e-08, 1.0],
-                      [1.0, -4.371138828673793e-08, -0.0],
-                      [4.371138828673793e-08, 1.0, -4.371138828673793e-08]])
+                          [1.0, -4.371138828673793e-08, -0.0],
+                          [4.371138828673793e-08, 1.0, -4.371138828673793e-08]])
 
     # Calculate intrinsic matrix.
     scale = RESOLUTION_PCT / 100
@@ -491,9 +489,9 @@ def getBlenderProj(az, el, distance_ratio, roll = 0, focal_length=35, img_w=137,
     cr = np.cos(np.radians(roll))
     sr = np.sin(np.radians(roll))
     R_z = np.matrix(((cr, -sr, 0),
-                  (sr, cr, 0),
-                  (0, 0, 1)))
-    return K, R_z@RT
+                     (sr, cr, 0),
+                     (0, 0, 1)))
+    return K, R_z @ RT
 
 
 def get_camera_matrices(metadata_filename, id):
@@ -510,12 +508,12 @@ def get_camera_matrices(metadata_filename, id):
 
     return intrinsic, extrinsic
 
-def get_projection(az, el, distance, focal_length=35, img_w=256, img_h=256, sensor_size_mm = 32.):
+def get_projection(az, el, distance, focal_length=35, img_w=256, img_h=256, sensor_size_mm=32.):
     """Calculate 4x3 3D to 2D projection matrix given viewpoint parameters."""
 
     # Calculate intrinsic matrix.
-    f_u = focal_length * img_w  / sensor_size_mm
-    f_v = focal_length * img_h  / sensor_size_mm
+    f_u = focal_length * img_w / sensor_size_mm
+    f_v = focal_length * img_h / sensor_size_mm
     u_0 = img_w / 2
     v_0 = img_h / 2
     K = np.matrix(((f_u, 0, u_0), (0, f_v, v_0), (0, 0, 1)))
@@ -524,8 +522,8 @@ def get_projection(az, el, distance, focal_length=35, img_w=256, img_h=256, sens
     sa = np.sin(np.radians(az))
     ca = np.cos(np.radians(az))
     R_azimuth = np.transpose(np.matrix(((ca, 0, sa),
-                                          (0, 1, 0),
-                                          (-sa, 0, ca))))
+                                        (0, 1, 0),
+                                        (-sa, 0, ca))))
     se = np.sin(np.radians(el))
     ce = np.cos(np.radians(el))
     R_elevation = np.transpose(np.matrix(((1, 0, 0),
@@ -535,16 +533,16 @@ def get_projection(az, el, distance, focal_length=35, img_w=256, img_h=256, sens
     se = np.sin(np.radians(180))
     ce = np.cos(np.radians(180))
     R_cam = np.transpose(np.matrix(((ce, -se, 0),
-                                          (se, ce, 0),
-                                          (0, 0, 1))))
+                                    (se, ce, 0),
+                                    (0, 0, 1))))
     T_world2cam = np.transpose(np.matrix((0,
-                                           0,
-                                           distance)))
-    RT = np.hstack((R_cam@R_elevation@R_azimuth, T_world2cam))
+                                          0,
+                                          distance)))
+    RT = np.hstack((R_cam @ R_elevation @ R_azimuth, T_world2cam))
 
     return K, RT
 
 def unpack_images(filename):
 
-    image = imageio.imread(filename).astype(float)/255.0
-    return torch.tensor(image).float().permute(2,0,1)
+    image = imageio.imread(filename).astype(float) / 255.0
+    return torch.tensor(image).float().permute(2, 0, 1)
