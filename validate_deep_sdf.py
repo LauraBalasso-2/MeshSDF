@@ -19,7 +19,7 @@ args = arg_parser.parse_args()
 
 specs = load_experiment_specifications(args.experiment_directory)
 data_source = specs.get("DataSource")
-true_meshes_dir = os.path.join("/", *data_source.split("/")[:-1], 'rescaled_meshes')
+true_meshes_dir = os.path.join(data_source, 'rescaled_meshes')
 
 reconstructed_meshes = glob.glob(os.path.join(args.experiment_directory, "Reconstructions/body*"))
 print(reconstructed_meshes)

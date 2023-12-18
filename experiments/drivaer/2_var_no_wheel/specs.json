@@ -1,6 +1,6 @@
 {
     "Description" : [ "This experiment learns a shape representation for cars " ],
-    "DataSource" : "/home/laura/exclude_backup/drivaer/",
+    "DataSource" : "/home/laura/exclude_backup/drivaer/2_var_no_wheel",
     "TrainSplit" : "splits/drivaer_2var_train.json",
     "TestSplit" : "splits/drivaer_2var_test.json",
     "AugmentData" : false,
