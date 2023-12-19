@@ -199,7 +199,7 @@ def main_function(experiment_directory, continue_from):
         print('continuing from "{}"'.format(continue_from))
 
 
-        model_epoch = ws.load_model_parameters(
+        model_epoch = ws.load_model_parameters_encoder(
             experiment_directory, continue_from, encoder, decoder
         )
 

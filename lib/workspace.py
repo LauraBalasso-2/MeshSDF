@@ -60,7 +60,7 @@ def load_model_parameters(experiment_directory, checkpoint, decoder):
     return data["epoch"]
 
 
-def load_model_parameters(experiment_directory, checkpoint, encoder, decoder):
+def load_model_parameters_encoder(experiment_directory, checkpoint, encoder, decoder):
 
     filename = os.path.join(
         experiment_directory, model_params_subdir, "encoder_" + checkpoint + ".pth"
@@ -89,12 +89,12 @@ def build_decoder(experiment_directory):
     experiment_specs = load_experiment_specifications(experiment_directory)
 
     arch = __import__(
-        "networks." + experiment_specs["NetworkArch"], fromlist=["Decoder"]
+        "lib.models." + experiment_specs["NetworkDecoder"], fromlist=["DeepSDF"]
     )
 
     latent_size = experiment_specs["CodeLength"]
 
-    decoder = arch.Decoder(latent_size, **experiment_specs["NetworkSpecs"]).cpu()
+    decoder = arch.DeepSDF(latent_size, **experiment_specs["NetworkSpecs"]).cpu()
 
     return decoder
 

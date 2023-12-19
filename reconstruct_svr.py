@@ -74,7 +74,7 @@ def main_function(experiment_directory, continue_from,  iterations, marching_cub
 
     print('Loading epoch "{}"'.format(continue_from))
 
-    ws.load_model_parameters(
+    ws.load_model_parameters_encoder(
         experiment_directory, continue_from, encoder, decoder
     )
     encoder.eval()
