@@ -350,7 +350,7 @@ def get_instance_filenames(data_source, split):
     npzfiles = []
     for dataset in split:
         for class_name in split[dataset]:
-            for instance_name in split[dataset][class_name]:
+            for instance_name in sorted(split[dataset][class_name]):
                 instance_filename = os.path.join(
                     dataset, class_name, instance_name + ".npz"
                 )
