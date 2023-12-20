@@ -1,4 +1,4 @@
-from lib import get_distance_function_error
+from lib import get_distance_function_error, predict_sdf_training
 from lib import load_experiment_specifications
 import argparse
 import glob
@@ -34,3 +34,6 @@ for reconstruction in reconstructed_meshes:
     true_mesh = os.path.join(true_meshes_dir, sample_name + '_rescaled.stl')
     save_path = os.path.join(save_dir, sample_name + "_sdf_error")
     get_distance_function_error(true_mesh, reconstruction, save_path)
+
+
+predict_sdf_training(args.experiment_directory)
