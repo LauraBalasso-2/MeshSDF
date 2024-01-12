@@ -1,8 +1,5 @@
-from lib import get_distance_function_error, predict_sdf_training
-from lib import load_experiment_specifications
+from lib import predict_sdf, compute_reconstruction_error
 import argparse
-import glob
-import os
 
 arg_parser = argparse.ArgumentParser(description="Compute validation errors")
 arg_parser.add_argument(
@@ -17,23 +14,12 @@ arg_parser.add_argument(
 
 args = arg_parser.parse_args()
 
-specs = load_experiment_specifications(args.experiment_directory)
-data_source = specs.get("DataSource")
-true_meshes_dir = os.path.join(data_source, 'rescaled_meshes')
-
-reconstructed_meshes = glob.glob(os.path.join(args.experiment_directory, "Reconstructions/body*"))
-print(reconstructed_meshes)
-
-save_dir = os.path.join(args.experiment_directory, "model_validation", "reconstructions_sdf")
-if not os.path.isdir(save_dir):
-    os.system('mkdir -p ' + save_dir)
-
-for reconstruction in reconstructed_meshes:
-    print(reconstruction)
-    sample_name = reconstruction.split('.')[0].split('/')[-1]
-    true_mesh = os.path.join(true_meshes_dir, sample_name + '_rescaled.stl')
-    save_path = os.path.join(save_dir, sample_name + "_sdf_error")
-    get_distance_function_error(true_mesh, reconstruction, save_path)
 
 
-predict_sdf_training(args.experiment_directory)
+predict_sdf(args.experiment_directory, mesh_reconstruction=True)
+
+# predict_sdf(args.experiment_directory, validation=True, mesh_reconstruction=True)
+
+# compute_reconstruction_error(args.experiment_directory)
+
+# compute_reconstruction_error(args.experiment_directory, validation=True)

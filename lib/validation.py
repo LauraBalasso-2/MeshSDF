@@ -1,10 +1,13 @@
+import glob
+
+import torch
 import trimesh
 import open3d as o3d
 import numpy as np
 import json
 import os
 from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, SDFSamples, \
-    get_instance_filenames, unpack_sdf_samples
+    get_instance_filenames, unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename
 
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 import sys
@@ -44,16 +47,26 @@ def get_distance_function_error(true_mesh_path, reconstructed_mesh_path, save_pa
     save_vtu(save_path, data)
 
 
-def predict_sdf_training(experiment_directory, save_true=True, save_predicted=True):
-    save_error_dir, save_true_dir, save_predicted_dir = setup_directories(experiment_directory, save_predicted, save_true)
+def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False):
 
     specs = load_experiment_specifications(experiment_directory)
     data_source = specs["DataSource"]
     num_samp_per_scene = specs["SamplesPerScene"]
-    train_split_file = specs["TrainSplit"]
+    if validation:
+        split_file = specs['TestSplit']
+        label = "validation"
+    else:
+        split_file = specs["TrainSplit"]
+        label = "training"
 
-    with open(train_split_file, "r") as f:
+    with open(split_file, "r") as f:
         train_split = json.load(f)
+
+    save_error_dir, save_true_dir, save_predicted_dir = setup_directories(experiment_directory,
+                                                                          save_predicted,
+                                                                          save_true,
+                                                                          label=label)
+    reconstruction_dir = get_reconstruction_dir(experiment_directory, True)
 
     npz_files = get_instance_filenames(data_source, train_split)
 
@@ -61,7 +74,6 @@ def predict_sdf_training(experiment_directory, save_true=True, save_predicted=Tr
 
     decoder, epoch = load_decoder(experiment_directory, 'latest')
     decoder.eval()
-
 
     for i, file in enumerate(npz_files):
         file_path = os.path.join(data_source, file)
@@ -88,28 +100,63 @@ def predict_sdf_training(experiment_directory, save_true=True, save_predicted=Tr
                          'z': np.ascontiguousarray(xyz[:, 2])}
             save_vtu(os.path.join(save_predicted_dir, file.split('.')[0].split('/')[-1]), data_pred)
 
+        if mesh_reconstruction:
+            reconstruct_mesh(decoder, file, latent_code, reconstruction_dir)
 
-def setup_directories(experiment_directory, save_predicted, save_true):
+
+def reconstruct_mesh(decoder, file, latent_code, reconstruction_dir, resolution=256):
+    mesh_filename = get_mesh_filename(reconstruction_dir, file)
+    print("Reconstructing {}...".format(mesh_filename))
+    with torch.no_grad():
+        create_mesh(decoder, latent_code, N=resolution, output_mesh=False, filename=mesh_filename)
+
+
+def setup_directories(experiment_directory, save_predicted, save_true, label):
     save_dir = os.path.join(experiment_directory, 'model_validation')
     if not os.path.isdir(save_dir):
         os.mkdir(save_dir)
     if save_true:
-        save_true_dir = os.path.join(experiment_directory, 'sdf_training_subsamples')
+        save_true_dir = os.path.join(experiment_directory, 'sdf_'+label+'_subsamples')
         if not os.path.isdir(save_true_dir):
             os.mkdir(save_true_dir)
     else:
         save_true_dir = None
 
     if save_predicted:
-        save_predicted_dir = os.path.join(save_dir, 'sdf_predicted_subsamples')
+        save_predicted_dir = os.path.join(save_dir, 'sdf_'+label+'_predicted_subsamples')
         if not os.path.isdir(save_predicted_dir):
             os.mkdir(save_predicted_dir)
     else:
         save_predicted_dir = None
 
-    save_error_dir = os.path.join(save_dir, 'sdf_prediction_error')
+    save_error_dir = os.path.join(save_dir, 'sdf_'+label+'_prediction_error')
     if not os.path.isdir(save_error_dir):
         os.mkdir(save_error_dir)
 
     return save_error_dir, save_true_dir, save_predicted_dir
 
+
+def compute_reconstruction_error(experiment_directory, validation=False):
+    # TODO : compute error only for train / validation instances or remove the option
+
+    specs = load_experiment_specifications(experiment_directory)
+    if validation:
+        label = "validation"
+        split = specs.get('TestSplit')
+    else:
+        label = "training"
+        split = specs.get("TrainSplit")
+
+    data_source = specs.get("DataSource")
+    true_meshes_dir = os.path.join(data_source, 'rescaled_meshes')
+    reconstructed_meshes = glob.glob(os.path.join(experiment_directory, "Reconstructions/body*"))
+    print(reconstructed_meshes)
+    save_dir = os.path.join(experiment_directory, "model_validation", "reconstructions_sdf_" + label)
+    if not os.path.isdir(save_dir):
+        os.system('mkdir -p ' + save_dir)
+    for reconstruction in reconstructed_meshes:
+        print(reconstruction)
+        sample_name = reconstruction.split('.')[0].split('/')[-1]
+        true_mesh = os.path.join(true_meshes_dir, sample_name + '_rescaled.stl')
+        save_path = os.path.join(save_dir, sample_name + "_sdf_error")
+        get_distance_function_error(true_mesh, reconstruction, save_path)
