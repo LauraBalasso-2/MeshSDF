@@ -190,14 +190,14 @@ def main_function(experiment_directory, resolution):
             )
 
     # store reconstructions
-    decoder.eval()
-    reconstruction_dir = get_reconstruction_dir(experiment_directory, True)
-    for sdf_data, indices, name in sdf_loader_reconstruction:
-        latent = lat_vecs(indices.cpu()).squeeze(0)
-        mesh_filename = get_mesh_filename(reconstruction_dir, name[0])
-        print("Reconstructing {}...".format(mesh_filename))
-        with torch.no_grad():
-            create_mesh(decoder, latent, N=resolution, output_mesh=False, filename=mesh_filename)
+    # decoder.eval()
+    # reconstruction_dir = get_reconstruction_dir(experiment_directory, True)
+    # for sdf_data, indices, name in sdf_loader_reconstruction:
+    #     latent = lat_vecs(indices.cpu()).squeeze(0)
+    #     mesh_filename = get_mesh_filename(reconstruction_dir, name[0])
+    #     print("Reconstructing {}...".format(mesh_filename))
+    #     with torch.no_grad():
+    #         create_mesh(decoder, latent, N=resolution, output_mesh=False, filename=mesh_filename)
 
     print("Done!")
 
