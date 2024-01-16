@@ -43,3 +43,16 @@ def configure_logging(args):
         file_logger_handler.setFormatter(formatter)
         logger.addHandler(file_logger_handler)
 
+
+class Logger:
+    def __init__(self, file_path):
+        self.log_path = file_path
+        self.create_logger()
+
+    def create_logger(self):
+        with open(self.log_path, 'w') as f:
+            pass
+
+    def write(self, message):
+        with open(self.log_path, 'a') as f:
+            f.write(message)
