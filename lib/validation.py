@@ -2,13 +2,12 @@ import glob
 
 import torch
 import trimesh
-import open3d as o3d
 import numpy as np
 import json
 import os
 import logging
-from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, SDFSamples, \
-    get_instance_filenames, unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename
+from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, get_instance_filenames, unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename, \
+    mesh_to_point_cloud
 
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 import sys
@@ -18,14 +17,6 @@ from mesh_to_sdf import create_from_scans
 
 sys.path.append('/home/laura/source/mesh2sdf/')
 from npz_to_vtu import save_vtu
-
-
-def mesh_to_point_cloud(mesh_path):
-    pcd = o3d.io.read_point_cloud(mesh_path)
-    reconstructed_point_cloud = np.asarray(pcd.points)
-    translation_matrix = np.ones_like(reconstructed_point_cloud)
-    translated_point_cloud = reconstructed_point_cloud - translation_matrix
-    return translated_point_cloud
 
 
 def get_distance_function_error(true_mesh_path, reconstructed_mesh_path, save_path):

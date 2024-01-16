@@ -2,6 +2,7 @@
 
 import logging
 import numpy as np
+import open3d as o3d
 import plyfile
 import skimage.measure
 import time
@@ -255,3 +256,11 @@ def create_mesh_optim_fast(
     next_indices = np.concatenate((next_samples,next_samples_i_plus, next_samples_j_plus,next_samples_k_plus,next_samples_i_minus,next_samples_j_minus, next_samples_k_minus))
 
     return verts, faces, samples, next_indices
+
+
+def mesh_to_point_cloud(mesh_path):
+    pcd = o3d.io.read_point_cloud(mesh_path)
+    reconstructed_point_cloud = np.asarray(pcd.points)
+    translation_matrix = np.ones_like(reconstructed_point_cloud)
+    translated_point_cloud = reconstructed_point_cloud - translation_matrix
+    return translated_point_cloud
