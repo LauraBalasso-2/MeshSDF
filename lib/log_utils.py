@@ -55,6 +55,6 @@ class Logger:
             pass
 
     def write(self, message, level='info'):
-        if level == self.level:
+        if level == self.level or level == 'info':
             with open(self.log_path, 'a') as f:
                 f.write(message + '\n')
