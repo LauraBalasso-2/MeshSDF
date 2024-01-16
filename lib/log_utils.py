@@ -45,14 +45,16 @@ def configure_logging(args):
 
 
 class Logger:
-    def __init__(self, file_path='log.txt'):
+    def __init__(self, file_path='log.txt', level='info'):
         self.log_path = file_path
+        self.level = level
         self.create_logger()
 
     def create_logger(self):
         with open(self.log_path, 'w') as f:
             pass
 
-    def write(self, message):
-        with open(self.log_path, 'a') as f:
-            f.write(message)
+    def write(self, message, level='info'):
+        if level == self.level:
+            with open(self.log_path, 'a') as f:
+                f.write(message)
