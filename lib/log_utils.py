@@ -45,7 +45,7 @@ def configure_logging(args):
 
 
 class Logger:
-    def __init__(self, file_path):
+    def __init__(self, file_path='log.txt'):
         self.log_path = file_path
         self.create_logger()
 
