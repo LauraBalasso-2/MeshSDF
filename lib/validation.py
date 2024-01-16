@@ -6,6 +6,7 @@ import open3d as o3d
 import numpy as np
 import json
 import os
+import logging
 from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, SDFSamples, \
     get_instance_filenames, unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename
 
@@ -47,8 +48,57 @@ def get_distance_function_error(true_mesh_path, reconstructed_mesh_path, save_pa
     save_vtu(save_path, data)
 
 
-def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False):
+def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat, clamp_dist, num_samples, lr, l2reg):
+    def adjust_learning_rate(
+            initial_lr, optimizer, num_iter, decreased_by_m, adjust_lr_every_m
+    ):
+        l_rate = initial_lr * ((1 / decreased_by_m) ** (num_iter // adjust_lr_every_m))
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = l_rate
 
+    decreased_by = 10
+    adjust_lr_every = int(num_iterations / 2)
+
+    if type(stat) == type(0.1):
+        latent = torch.ones(1, latent_size).normal_(mean=0, std=stat)
+    else:
+        latent = torch.normal(stat[0].detach(), stat[1].detach())
+    latent.requires_grad = True
+
+    optimizer = torch.optim.Adam([latent], lr=lr)
+
+    loss_num = 0
+    loss_l1 = torch.nn.L1Loss()
+    for e in range(num_iterations):
+        decoder.eval()
+        xyz = test_sdf[:, 0:3]
+        sdf_gt = test_sdf[:, 3].unsqueeze(1)
+        sdf_gt = torch.clamp(sdf_gt, -clamp_dist, clamp_dist)
+        adjust_learning_rate(lr, optimizer, e, decreased_by, adjust_lr_every)
+
+        optimizer.zero_grad()
+
+        latent_inputs = latent.expand(num_samples, -1)
+        inputs = torch.cat([latent_inputs, xyz], 1)
+
+        pred_sdf = decoder(inputs)
+        pred_sdf = torch.clamp(pred_sdf, -clamp_dist, clamp_dist)
+        loss = loss_l1(pred_sdf, sdf_gt)
+        if l2reg:
+            loss += 1e-4 * torch.mean(latent.pow(2))
+        loss.backward()
+        optimizer.step()
+
+        if e % 50 == 0:
+            logging.debug(loss.Fcpu().data.numpy())
+            logging.debug(e)
+            logging.debug(latent.norm())
+        loss_num = loss.cpu().data.numpy()
+
+    return loss_num, latent
+
+
+def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False):
     specs = load_experiment_specifications(experiment_directory)
     data_source = specs["DataSource"]
     num_samp_per_scene = specs["SamplesPerScene"]
@@ -70,17 +120,30 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
 
     npz_files = get_instance_filenames(data_source, train_split)
 
-    latent_vectors = load_latent_vectors(experiment_directory, checkpoint='latest')
-
     decoder, epoch = load_decoder(experiment_directory, 'latest')
     decoder.eval()
 
-    for i, file in enumerate(npz_files):
+    if not validation:
+        latent_vectors = load_latent_vectors(experiment_directory, checkpoint='latest')
+
+    for i, file in enumerate(sorted(npz_files)):
         file_path = os.path.join(data_source, file)
         subsample = unpack_sdf_samples(file_path, subsample=num_samp_per_scene, random_seed=i)
         xyz = subsample[:, :-1]
         true_sdf = subsample[:, -1]
-        predicted_sdf = decode_sdf(decoder, latent_vectors[i], xyz)
+        if validation:
+            _, latent_code = optimize_latent_vector(decoder,
+                                                    800,
+                                                    specs["CodeLength"],
+                                                    subsample,
+                                                    stat=0.01,
+                                                    clamp_dist=0.1,
+                                                    num_samples=num_samp_per_scene,
+                                                    lr=1e-5,
+                                                    l2reg=True)
+        else:
+            latent_code = latent_vectors[i]
+        predicted_sdf = decode_sdf(decoder, latent_code, xyz)
         sdf_error = np.abs(true_sdf.numpy() - predicted_sdf.detach().numpy().reshape(-1))
         data = {'sdf_error': np.ascontiguousarray(sdf_error),
                 'x': np.ascontiguousarray(xyz[:, 0]),
@@ -116,20 +179,20 @@ def setup_directories(experiment_directory, save_predicted, save_true, label):
     if not os.path.isdir(save_dir):
         os.mkdir(save_dir)
     if save_true:
-        save_true_dir = os.path.join(experiment_directory, 'sdf_'+label+'_subsamples')
+        save_true_dir = os.path.join(experiment_directory, 'sdf_' + label + '_subsamples')
         if not os.path.isdir(save_true_dir):
             os.mkdir(save_true_dir)
     else:
         save_true_dir = None
 
     if save_predicted:
-        save_predicted_dir = os.path.join(save_dir, 'sdf_'+label+'_predicted_subsamples')
+        save_predicted_dir = os.path.join(save_dir, 'sdf_' + label + '_predicted_subsamples')
         if not os.path.isdir(save_predicted_dir):
             os.mkdir(save_predicted_dir)
     else:
         save_predicted_dir = None
 
-    save_error_dir = os.path.join(save_dir, 'sdf_'+label+'_prediction_error')
+    save_error_dir = os.path.join(save_dir, 'sdf_' + label + '_prediction_error')
     if not os.path.isdir(save_error_dir):
         os.mkdir(save_error_dir)
 
