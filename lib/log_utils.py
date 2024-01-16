@@ -57,4 +57,4 @@ class Logger:
     def write(self, message, level='info'):
         if level == self.level:
             with open(self.log_path, 'a') as f:
-                f.write(message)
+                f.write(message + '\n')
