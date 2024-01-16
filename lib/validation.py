@@ -6,8 +6,9 @@ import numpy as np
 import json
 import os
 import logging
-from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, get_instance_filenames, unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename, \
-    mesh_to_point_cloud
+from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, get_instance_filenames, \
+    unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename, \
+    mesh_to_point_cloud, Logger
 
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 import sys
@@ -31,7 +32,7 @@ def get_distance_function_error(true_mesh_path, reconstructed_mesh_path, save_pa
     point_cloud_translated = mesh_to_point_cloud(reconstructed_mesh_path)
     sdf = sample_point_cloud.get_sdf(point_cloud_translated)
 
-    data = {'distance_function': np.ascontiguousarray(np.abs(sdf)),
+    data = {'distance_from_true': np.ascontiguousarray(np.abs(sdf)),
             'x': np.ascontiguousarray(point_cloud_translated[:, 0]),
             'y': np.ascontiguousarray(point_cloud_translated[:, 1]),
             'z': np.ascontiguousarray(point_cloud_translated[:, 2])}
@@ -39,12 +40,12 @@ def get_distance_function_error(true_mesh_path, reconstructed_mesh_path, save_pa
     save_vtu(save_path, data)
 
 
-def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat, clamp_dist, num_samples, lr, l2reg):
+def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat, clamp_dist, num_samples, lr, l2reg, logger):
     def adjust_learning_rate(
-            initial_lr, optimizer, num_iter, decreased_by_m, adjust_lr_every_m
+            initial_lr, optim, num_iter, decreased_by_m, adjust_lr_every_m
     ):
         l_rate = initial_lr * ((1 / decreased_by_m) ** (num_iter // adjust_lr_every_m))
-        for param_group in optimizer.param_groups:
+        for param_group in optim.param_groups:
             param_group["lr"] = l_rate
 
     decreased_by = 10
@@ -60,6 +61,9 @@ def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat,
 
     loss_num = 0
     loss_l1 = torch.nn.L1Loss()
+
+    logger.write('Starting latent code optimization ...')
+
     for e in range(num_iterations):
         decoder.eval()
         xyz = test_sdf[:, 0:3]
@@ -70,9 +74,9 @@ def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat,
         optimizer.zero_grad()
 
         latent_inputs = latent.expand(num_samples, -1)
-        inputs = torch.cat([latent_inputs, xyz], 1)
+        # inputs = torch.cat([latent_inputs, xyz], 1)
 
-        pred_sdf = decoder(inputs)
+        pred_sdf = decoder(latent_inputs, xyz)
         pred_sdf = torch.clamp(pred_sdf, -clamp_dist, clamp_dist)
         loss = loss_l1(pred_sdf, sdf_gt)
         if l2reg:
@@ -80,16 +84,15 @@ def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat,
         loss.backward()
         optimizer.step()
 
-        if e % 50 == 0:
-            logging.debug(loss.Fcpu().data.numpy())
-            logging.debug(e)
-            logging.debug(latent.norm())
+        if e % 10 == 0:
+            logger.write('iter ' + str(e), level='debug')
+            logger.write('loss ' + str(loss.cpu().data.numpy()) + '\n', level='debug')
         loss_num = loss.cpu().data.numpy()
 
     return loss_num, latent
 
 
-def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False):
+def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False, logger=Logger()):
     specs = load_experiment_specifications(experiment_directory)
     data_source = specs["DataSource"]
     num_samp_per_scene = specs["SamplesPerScene"]
@@ -107,7 +110,7 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
                                                                           save_predicted,
                                                                           save_true,
                                                                           label=label)
-    reconstruction_dir = get_reconstruction_dir(experiment_directory, True)
+    reconstruction_dir = get_reconstruction_dir(experiment_directory, True, validation=validation)
 
     npz_files = get_instance_filenames(data_source, train_split)
 
@@ -118,6 +121,7 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
         latent_vectors = load_latent_vectors(experiment_directory, checkpoint='latest')
 
     for i, file in enumerate(sorted(npz_files)):
+        logger.write("Predicting sample from file: " + file)
         file_path = os.path.join(data_source, file)
         subsample = unpack_sdf_samples(file_path, subsample=num_samp_per_scene, random_seed=i)
         xyz = subsample[:, :-1]
@@ -130,8 +134,9 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
                                                     stat=0.01,
                                                     clamp_dist=0.1,
                                                     num_samples=num_samp_per_scene,
-                                                    lr=1e-5,
-                                                    l2reg=True)
+                                                    lr=5e-3,
+                                                    l2reg=True,
+                                                    logger=logger)
         else:
             latent_code = latent_vectors[i]
         predicted_sdf = decode_sdf(decoder, latent_code, xyz)
@@ -191,26 +196,20 @@ def setup_directories(experiment_directory, save_predicted, save_true, label):
 
 
 def compute_reconstruction_error(experiment_directory, validation=False):
-    # TODO : compute error only for train / validation instances or remove the option
 
     specs = load_experiment_specifications(experiment_directory)
-    if validation:
-        label = "validation"
-        split = specs.get('TestSplit')
-    else:
-        label = "training"
-        split = specs.get("TrainSplit")
 
     data_source = specs.get("DataSource")
     true_meshes_dir = os.path.join(data_source, 'rescaled_meshes')
-    reconstructed_meshes = glob.glob(os.path.join(experiment_directory, "Reconstructions/body*"))
+    reconstruction_dir = get_reconstruction_dir(experiment_directory, validation=validation)
+    reconstructed_meshes = glob.glob(os.path.join(reconstruction_dir, "body*"))
     print(reconstructed_meshes)
-    save_dir = os.path.join(experiment_directory, "model_validation", "reconstructions_sdf_" + label)
+    save_dir = os.path.join(experiment_directory, "model_validation", "reconstruction_error_" + label)
     if not os.path.isdir(save_dir):
         os.system('mkdir -p ' + save_dir)
     for reconstruction in reconstructed_meshes:
         print(reconstruction)
         sample_name = reconstruction.split('.')[0].split('/')[-1]
         true_mesh = os.path.join(true_meshes_dir, sample_name + '_rescaled.stl')
-        save_path = os.path.join(save_dir, sample_name + "_sdf_error")
+        save_path = os.path.join(save_dir, sample_name + "_error")
         get_distance_function_error(true_mesh, reconstruction, save_path)

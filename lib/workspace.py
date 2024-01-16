@@ -10,6 +10,7 @@ optimizer_params_subdir = "OptimizerParameters"
 latent_codes_subdir = "LatentCodes"
 logs_filename = "Logs.pth"
 reconstructions_subdir = "Reconstructions"
+reconstructions_subdir_validation = "Reconstructions_validation"
 optimizations_subdir = "Optimizations"
 optimizations_meshes_subdir = "Meshes"
 optimizations_codes_subdir = "Codes"
@@ -206,9 +207,9 @@ def get_latent_codes_dir(experiment_dir, create_if_nonexistent=False):
 
     return dir
 
-def get_reconstruction_dir(experiment_dir, create_if_nonexistent=False):
+def get_reconstruction_dir(experiment_dir, create_if_nonexistent=False, validation=False):
 
-    dir = os.path.join(experiment_dir, reconstructions_subdir)
+    dir = os.path.join(experiment_dir, reconstructions_subdir_validation if validation else reconstructions_subdir)
 
     if create_if_nonexistent and not os.path.isdir(dir):
         os.makedirs(dir)
