@@ -373,7 +373,8 @@ def unpack_sdf_samples(filename, subsample=None, random_seed=None):
 
     npz = np.load(filename)
     if subsample is None:
-        return npz
+        npz_full = torch.cat([torch.from_numpy(npz.get('pos')), torch.from_numpy(npz.get('neg'))], 0).float()
+        return npz_full
 
     pos_tensor = remove_nans(torch.from_numpy(npz["pos"].astype(float)))
     neg_tensor = remove_nans(torch.from_numpy(npz["neg"].astype(float)))
