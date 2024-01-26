@@ -1,46 +1,23 @@
-import glob
-
 import torch
-import trimesh
 import numpy as np
 import json
 import os
-import logging
 from lib import load_latent_vectors, load_decoder, decode_sdf, load_experiment_specifications, get_instance_filenames, \
     unpack_sdf_samples, get_reconstruction_dir, create_mesh, get_mesh_filename, \
-    mesh_to_point_cloud, Logger
+    Logger
+from lib.error_computation import compute_clamped_error
+from lib.IO_utils import create_dir_if_not_existent
 
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
+
 import sys
-
-sys.path.append('/home/laura/source/Github_repos/LauraBalasso-2/mesh_to_sdf/')
-from mesh_to_sdf import create_from_scans
-
+sys.path.append('/home/laura/source/utilities')
+from error_plots import plot_error_hist, plot_error_bar, plot_multiple_boxplots
 sys.path.append('/home/laura/source/mesh2sdf/')
 from npz_to_vtu import save_vtu
 
-
-def get_distance_function_error(true_mesh_path, reconstructed_mesh_path, save_path):
-    mesh = trimesh.load(true_mesh_path)
-
-    if isinstance(mesh, trimesh.Scene):
-        mesh = mesh.dump().sum()
-    if not isinstance(mesh, trimesh.Trimesh):
-        raise TypeError("The mesh parameter must be a trimesh mesh.")
-
-    sample_point_cloud = create_from_scans(mesh)
-    point_cloud_translated = mesh_to_point_cloud(reconstructed_mesh_path)
-    sdf = sample_point_cloud.get_sdf(point_cloud_translated)
-
-    data = {'distance_from_true': np.ascontiguousarray(np.abs(sdf)),
-            'x': np.ascontiguousarray(point_cloud_translated[:, 0]),
-            'y': np.ascontiguousarray(point_cloud_translated[:, 1]),
-            'z': np.ascontiguousarray(point_cloud_translated[:, 2])}
-
-    save_vtu(save_path, data)
-
-
-def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat, clamp_dist, num_samples, lr, l2reg, logger):
+def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat, clamp_dist, num_samples, lr, l2reg,
+                           logger):
     def adjust_learning_rate(
             initial_lr, optim, num_iter, decreased_by_m, adjust_lr_every_m
     ):
@@ -49,7 +26,7 @@ def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat,
             param_group["lr"] = l_rate
 
     decreased_by = 10
-    adjust_lr_every = int(num_iterations / 2)
+    adjust_lr_every = int(num_iterations * 2 / 3)
 
     if type(stat) == type(0.1):
         latent = torch.ones(1, latent_size).normal_(mean=0, std=stat)
@@ -92,7 +69,9 @@ def optimize_latent_vector(decoder, num_iterations, latent_size, test_sdf, stat,
     return loss_num, latent
 
 
-def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False, logger=Logger()):
+def predict_sdf(experiment_directory, save_true=True, save_predicted=True, validation=False, mesh_reconstruction=False,
+                sample_error_plot=True, error_summary_plot='bar', logger=Logger()):
+
     specs = load_experiment_specifications(experiment_directory)
     data_source = specs["DataSource"]
     num_samp_per_scene = specs["SamplesPerScene"]
@@ -106,10 +85,10 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
     with open(split_file, "r") as f:
         train_split = json.load(f)
 
-    save_error_dir, save_true_dir, save_predicted_dir = setup_directories(experiment_directory,
-                                                                          save_predicted,
-                                                                          save_true,
-                                                                          label=label)
+    save_error_dir, save_true_dir, save_predicted_dir, img_dir = setup_directories(experiment_directory,
+                                                                                   save_predicted,
+                                                                                   save_true,
+                                                                                   label=label)
     reconstruction_dir = get_reconstruction_dir(experiment_directory, True, validation=validation)
 
     npz_files = get_instance_filenames(data_source, train_split)
@@ -120,15 +99,18 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
     if not validation:
         latent_vectors = load_latent_vectors(experiment_directory, checkpoint='latest')
 
+    error_summary = {}
+
     for i, file in enumerate(sorted(npz_files)):
         logger.write("Predicting sample from file: " + file)
         file_path = os.path.join(data_source, file)
-        subsample = unpack_sdf_samples(file_path, subsample=num_samp_per_scene, random_seed=i)
+        sample_name = file.split('.')[0].split('/')[-1]
+        subsample = unpack_sdf_samples(file_path, subsample=None, random_seed=i)
         xyz = subsample[:, :-1]
         true_sdf = subsample[:, -1]
         if validation:
             _, latent_code = optimize_latent_vector(decoder,
-                                                    800,
+                                                    300,
                                                     specs["CodeLength"],
                                                     subsample,
                                                     stat=0.01,
@@ -140,30 +122,51 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
         else:
             latent_code = latent_vectors[i]
         predicted_sdf = decode_sdf(decoder, latent_code, xyz)
-        sdf_error = np.abs(true_sdf.numpy() - predicted_sdf.detach().numpy().reshape(-1))
-        data = {'sdf_error': np.ascontiguousarray(sdf_error),
-                'x': np.ascontiguousarray(xyz[:, 0]),
-                'y': np.ascontiguousarray(xyz[:, 1]),
-                'z': np.ascontiguousarray(xyz[:, 2])}
-        save_vtu(os.path.join(save_error_dir, file.split('.')[0].split('/')[-1]), data)
+        sdf_error = compute_clamped_error(predicted_sdf, true_sdf)
+        if error_summary_plot == 'box_plots':
+            error_summary[sample_name] = sdf_error.astype(float).tolist()
+        else:
+            error_summary[sample_name] = float(np.mean(sdf_error))
+        if sample_error_plot:
+            plot_error_hist(sdf_error, fig_name=os.path.join(img_dir, sample_name + '_error_hist.png'), bins=20)
+        clamped_coordinates = xyz[np.abs(true_sdf.numpy()) < 0.1]
+        save_3d_function(clamped_coordinates, sdf_error, os.path.join(save_error_dir, sample_name), function_name='sdf_error')
         if save_true:
-            data_true = {'sdf': np.ascontiguousarray(true_sdf),
-                         'x': np.ascontiguousarray(xyz[:, 0]),
-                         'y': np.ascontiguousarray(xyz[:, 1]),
-                         'z': np.ascontiguousarray(xyz[:, 2])}
-            save_vtu(os.path.join(save_true_dir, file.split('.')[0].split('/')[-1]), data_true)
+            save_3d_function(xyz, true_sdf, os.path.join(save_true_dir, sample_name), function_name='sdf')
         if save_predicted:
-            data_pred = {'sdf_predicted': np.ascontiguousarray(predicted_sdf.detach().numpy().reshape(-1)),
-                         'x': np.ascontiguousarray(xyz[:, 0]),
-                         'y': np.ascontiguousarray(xyz[:, 1]),
-                         'z': np.ascontiguousarray(xyz[:, 2])}
-            save_vtu(os.path.join(save_predicted_dir, file.split('.')[0].split('/')[-1]), data_pred)
+            save_3d_function(xyz, predicted_sdf.detach().numpy().reshape(-1), os.path.join(save_predicted_dir, sample_name), function_name='sdf_predicted')
 
         if mesh_reconstruction:
             reconstruct_mesh(decoder, file, latent_code, reconstruction_dir)
 
+    plot_error(error_summary, error_summary_plot, img_dir, save_error_dir)
 
-def reconstruct_mesh(decoder, file, latent_code, reconstruction_dir, resolution=256):
+
+def save_3d_function(coordinates, function_values, file_path, function_name):
+    data = {function_name: np.ascontiguousarray(function_values),
+            'x': np.ascontiguousarray(coordinates[:, 0]),
+            'y': np.ascontiguousarray(coordinates[:, 1]),
+            'z': np.ascontiguousarray(coordinates[:, 2])}
+    save_vtu(file_path, data)
+
+
+def plot_error(error_summary, error_summary_plot, img_dir, save_error_dir):
+    if error_summary_plot == 'bar':
+        plot_error_bar(list(error_summary.values()), labels=list(error_summary.keys()), plot_mean=True,
+                       fig_name=os.path.join(img_dir, 'mean_errors.png'))
+
+    elif error_summary_plot == 'hist':
+        plot_error_hist(list(error_summary.values()), fig_name=os.path.join(img_dir, 'mean_errors.png'))
+
+    elif error_summary_plot == 'box_plots':
+        plot_multiple_boxplots(error_summary, fig_name=os.path.join(img_dir, 'error_box_plots.png'))
+        for k in error_summary.keys():
+            error_summary[k] = float(np.mean(error_summary[k]))
+    with open(os.path.join(save_error_dir, 'mean_errors.json'), 'w') as f:
+        json.dump(error_summary, f)
+
+
+def reconstruct_mesh(decoder, file, latent_code, reconstruction_dir, resolution=512):
     mesh_filename = get_mesh_filename(reconstruction_dir, file)
     print("Reconstructing {}...".format(mesh_filename))
     with torch.no_grad():
@@ -172,44 +175,23 @@ def reconstruct_mesh(decoder, file, latent_code, reconstruction_dir, resolution=
 
 def setup_directories(experiment_directory, save_predicted, save_true, label):
     save_dir = os.path.join(experiment_directory, 'model_validation')
-    if not os.path.isdir(save_dir):
-        os.mkdir(save_dir)
+    create_dir_if_not_existent(save_dir)
     if save_true:
         save_true_dir = os.path.join(experiment_directory, 'sdf_' + label + '_subsamples')
-        if not os.path.isdir(save_true_dir):
-            os.mkdir(save_true_dir)
+        create_dir_if_not_existent(save_true_dir)
     else:
         save_true_dir = None
 
     if save_predicted:
         save_predicted_dir = os.path.join(save_dir, 'sdf_' + label + '_predicted_subsamples')
-        if not os.path.isdir(save_predicted_dir):
-            os.mkdir(save_predicted_dir)
+        create_dir_if_not_existent(save_predicted_dir)
     else:
         save_predicted_dir = None
 
     save_error_dir = os.path.join(save_dir, 'sdf_' + label + '_prediction_error')
-    if not os.path.isdir(save_error_dir):
-        os.mkdir(save_error_dir)
+    create_dir_if_not_existent(save_error_dir)
+    img_dir = os.path.join(save_dir, 'img_'+label)
+    create_dir_if_not_existent(img_dir)
 
-    return save_error_dir, save_true_dir, save_predicted_dir
+    return save_error_dir, save_true_dir, save_predicted_dir, img_dir
 
-
-def compute_reconstruction_error(experiment_directory, validation=False):
-
-    specs = load_experiment_specifications(experiment_directory)
-
-    data_source = specs.get("DataSource")
-    true_meshes_dir = os.path.join(data_source, 'rescaled_meshes')
-    reconstruction_dir = get_reconstruction_dir(experiment_directory, validation=validation)
-    reconstructed_meshes = glob.glob(os.path.join(reconstruction_dir, "body*"))
-    print(reconstructed_meshes)
-    save_dir = os.path.join(experiment_directory, "model_validation", "reconstruction_error_" + label)
-    if not os.path.isdir(save_dir):
-        os.system('mkdir -p ' + save_dir)
-    for reconstruction in reconstructed_meshes:
-        print(reconstruction)
-        sample_name = reconstruction.split('.')[0].split('/')[-1]
-        true_mesh = os.path.join(true_meshes_dir, sample_name + '_rescaled.stl')
-        save_path = os.path.join(save_dir, sample_name + "_error")
-        get_distance_function_error(true_mesh, reconstruction, save_path)
