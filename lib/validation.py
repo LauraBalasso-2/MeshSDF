@@ -105,7 +105,7 @@ def predict_sdf(experiment_directory, save_true=True, save_predicted=True, valid
         logger.write("Predicting sample from file: " + file)
         file_path = os.path.join(data_source, file)
         sample_name = file.split('.')[0].split('/')[-1]
-        subsample = unpack_sdf_samples(file_path, subsample=None, random_seed=i)
+        subsample = unpack_sdf_samples(file_path, subsample=num_samp_per_scene, random_seed=i)
         xyz = subsample[:, :-1]
         true_sdf = subsample[:, -1]
         if validation:
