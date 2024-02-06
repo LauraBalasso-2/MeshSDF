@@ -52,7 +52,7 @@ def main_function(experiment_directory, resolution):
 
     code_bound = get_spec_with_default(specs, "CodeBound", None)
     decoder = DeepSDF(latent_size, **specs["NetworkSpecs"]).cpu()
-
+    # decoder, _ = load_decoder(experiment_directory, 'latest')
     print("training with {} CPU(s)".format(torch.cpu.device_count()))
     decoder = torch.nn.DataParallel(decoder)
     # decoder.double()
