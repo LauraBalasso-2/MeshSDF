@@ -3,7 +3,6 @@
 import json
 import os
 import torch
-import pdb
 
 model_params_subdir = "ModelParameters"
 optimizer_params_subdir = "OptimizerParameters"

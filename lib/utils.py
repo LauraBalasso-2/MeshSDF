@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 import os
-import pdb
 import logging
 import torch
-import trimesh
-import glob
 import lib.workspace as ws
 import numpy as np
 import imageio
